@@ -15,11 +15,13 @@ class Text_Analyzer:
     # Initialize the Text_Complexity object
     # Limit defines the maximum number of characters that will be extracted
     # and analyzed from each text file.
-    def __init__(self, limit=10000):
+    def __init__(self, limit=10000, enable_gpu=False):
         self.limit = limit
         self.library = None
         self.texts = collections.OrderedDict()
 
+        if enable_gpu:
+            spacy.prefer_gpu()
         self.nlp = spacy.load("en_core_web_sm")
         self.nlp.max_length = self.limit
         self.texts_pos = collections.OrderedDict()
@@ -82,7 +84,7 @@ class Text_Analyzer:
 
         # Print total time taken
         tend = time.time()
-        print('... time taken:', tend - tstart, 'seconds')
+        print('... time taken:', round(tend - tstart, 2), 'seconds')
 
     def analyze(self):
         print('Analyzing text files...')
@@ -165,7 +167,8 @@ class Text_Analyzer:
                                         '—', '-', ':', '“', '”', '‘', '’']:
                     length += 1
 
-            # Calculate distribution of sentence lengths and store in texts_dists
+            # Calculate distribution of sentence lengths and store in
+            # texts_dists
             sent_len_dist = np.histogram(
                 sent_lens, bins=range(max(sent_lens)), density=True)
             self.texts_dists[name]['sent_len'] = sent_len_dist
@@ -194,12 +197,13 @@ class Text_Analyzer:
 
         # Print total time taken
         tend = time.time()
-        print('... time taken:', tend - tstart, 'seconds')
+        print('... time taken:', round(tend - tstart, 2), 'seconds')
 
     # Exports statistics of the texts into a CSV file
     def export_statistics_CSV(self, output_filename):
         with open(output_filename, 'w') as f:
-            # Extract attributes from a single entry in texts_stats and write them as a CSV header
+            # Extract attributes from a single entry in texts_stats and write
+            # them as a CSV header
             names = list(self.texts_stats.keys())
             csv_header = list(self.texts_stats[names[0]].keys())
             csv_header = ','.join(csv_header)
@@ -273,6 +277,61 @@ class Text_Analyzer:
 
         plt.plot()
         plt.savefig('./plots/bar-chart-' + file_name + '.pdf')
+
+    # This plots a multiple bar graph for the statistics of the first 5 texts
+    def plot_multi_bar(self, names):
+        length = min(len(filenames), 5)
+        x_labels = ['Word Length', 'Vocabulary', 'Grammar', 'Overall']
+
+        # Set plot parameters
+        fig, ax = plt.subplots()
+        width = 1. / (length + 2)  # width of bar
+        x = np.arange(4)
+
+        # Calculate geometric mean and save relevant statistics to data
+        data = []
+        for i in range(length):
+            # Caclulate overall score as geometric mean of word_len_mean, vocab_norm
+            # dep_depth_mean
+            word_len_mean = self.texts_stats[names[i]]['word_len_mean']
+            vocab_norm = self.texts_stats[names[i]]['vocab_norm']
+            dep_depth_mean = self.texts_stats[names[i]]['dep_depth_mean']
+
+            geometric_mean = (word_len_mean * vocab_norm *
+                              dep_depth_mean)**(1. / 3)
+
+            data.append([word_len_mean, vocab_norm,
+                         dep_depth_mean, geometric_mean])
+        data = np.asarray(data)
+
+        #  Normalise data according to its category
+        for j in range(data.shape[1]):
+            max_value = np.max(data[:, j])
+            data[:, j] = data[:, j] / max_value
+
+        for i in range(data.shape[0]):
+            ax.bar(x + (i * width), data[i, :], width, label=names[i])
+
+        ax.set_ylabel('Average')
+        # ax.set_ylim(0, 2)
+        ax.set_xticks(x + width + width / 2)
+        ax.set_xticklabels(x_labels)
+        # ax.set_xlabel('Measure of Reading Difficulty')
+        ax.set_title('Reading Difficulty of Different Texts')
+        ax.legend()
+        plt.grid(True, 'major', 'y', ls='--', lw=.5, c='k', alpha=.3)
+
+        # Shrink current axis's height by 20% on the bottom
+        # box = ax.get_position()
+        # ax.set_position([box.x0, box.y0 + box.height * 0.1,
+        #                  box.width, box.height * 2])
+
+        # Put a legend below current axis
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1),
+                  fancybox=True, shadow=True)
+
+        fig.tight_layout()
+        plt.savefig('./results/Bar Chart of Reading Difficulty.pdf')
 
     # This plots a line graph
     def plot_line(xs, ys, xlabel='x', ylabel='y', title='Title', label=None):
@@ -360,23 +419,33 @@ class Text_Analyzer:
 if __name__ == "__main__":
     limit = 10000
     library = './sample_texts/'
+    enable_gpu = False
 
-    if len(sys.argv) == 2:
-        library = sys.argv[1]
-    elif len(sys.argv) == 3:
-        library = sys.argv[1]
-        limit = int(sys.argv[2])
+    # Update settings according to arguments passed via the terminal
+    for i in range(len(sys.argv)):
+        if sys.argv[i] == '-input':
+            library = sys.argv[i + 1]
+        elif sys.argv[i] == '-limit':
+            limit = int(sys.argv[i + 1])
+        elif sys.argv[i] == '-gpu':
+            enable_gpu = sys.argv[i + 1].lower()
+            if enable_gpu == 'true':
+                enable_gpu = True
+            elif enable_gpu == 'false':
+                enable_gpu = False
 
     if library[-1] != '/':
         library += '/'
 
-    text_analyzer = Text_Analyzer(limit=limit)
+    print('========= TEXT ANALYZER =========')
+
+    text_analyzer = Text_Analyzer(limit=limit, enable_gpu=enable_gpu)
 
     text_analyzer.load(library=library)
 
     text_analyzer.analyze()
 
-    text_analyzer.export_statistics_CSV('./text_statistics.csv')
+    text_analyzer.export_statistics_CSV('./results/text_statistics.csv')
 
     filenames = glob.glob(library + '*.txt')
     filenames.sort()
@@ -384,8 +453,6 @@ if __name__ == "__main__":
         filenames[i] = filenames[i].replace(library, '')
         filenames[i] = filenames[i].replace('.txt', '')
 
-    text_analyzer.plot_comparison_word_lengths(filenames[0], filenames[1])
+    text_analyzer.plot_multi_bar(filenames)
 
-    text_analyzer.plot_comparison_dependency_depths(filenames[0], filenames[1])
-
-    text_analyzer.plot_comparison_sentence_lengths(filenames[0], filenames[1])
+    print('COMPLETED. See ./results for a bar graph and statistics.')
