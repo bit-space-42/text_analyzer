@@ -1,5 +1,7 @@
 # Text Analyzer
 
+`text_analyzer.py` is a tool that extracts key statistics over a set of texts (see **Output** section below) . These key statistics can be used to compare different texts, for example, reading difficulty (see **Output** section below). 
+
 ## How to Use
 
 This `Python` script uses Natural Language Processing (NLP) to measure the reading level of different texts.
